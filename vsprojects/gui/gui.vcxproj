@@ -136,12 +136,15 @@
     <ClCompile Include="..\..\src\gui\widgets\assembly.cc" />
     <ClCompile Include="..\..\src\gui\widgets\breakpoints.cc" />
     <ClCompile Include="..\..\src\gui\widgets\callstacks.cc" />
+    <ClCompile Include="..\..\src\gui\widgets\cdrom-viewer.cc" />
     <ClCompile Include="..\..\src\gui\widgets\console.cc" />
     <ClCompile Include="..\..\src\gui\widgets\dynarec_disassembly.cc" />
     <ClCompile Include="..\..\src\gui\widgets\events.cc" />
     <ClCompile Include="..\..\src\gui\widgets\filedialog.cc" />
     <ClCompile Include="..\..\src\gui\widgets\gpulogger.cc" />
     <ClCompile Include="..\..\src\gui\widgets\handlers.cc" />
+    <ClCompile Include="..\..\src\gui\widgets\heap_viewer.cc" />
+    <ClCompile Include="..\..\src\gui\widgets\hwregs.cc" />
     <ClCompile Include="..\..\src\gui\widgets\isobrowser.cc" />
     <ClCompile Include="..\..\src\gui\widgets\kernellog.cc" />
     <ClCompile Include="..\..\src\gui\widgets\log.cc" />
@@ -149,9 +152,11 @@
     <ClCompile Include="..\..\src\gui\widgets\luainspector.cc" />
     <ClCompile Include="..\..\src\gui\widgets\memcard_manager.cc" />
     <ClCompile Include="..\..\src\gui\widgets\memory_observer.cc" />
+    <ClCompile Include="..\..\src\gui\widgets\msan_viewer.cc" />
     <ClCompile Include="..\..\src\gui\widgets\named_savestates.cc" />
     <ClCompile Include="..\..\src\gui\widgets\patches.cc" />
     <ClCompile Include="..\..\src\gui\widgets\pio-cart.cc" />
+    <ClCompile Include="..\..\src\gui\widgets\ram-viewer.cc" />
     <ClCompile Include="..\..\src\gui\widgets\typed_debugger.cc" />
     <ClCompile Include="..\..\src\gui\widgets\registers.cc" />
     <ClCompile Include="..\..\src\gui\widgets\shader-editor.cc" />
@@ -159,6 +164,7 @@
     <ClCompile Include="..\..\src\gui\widgets\vram-viewer.cc" />
     <ClCompile Include="..\..\src\gui\widgets\zep-lua.cc" />
     <ClCompile Include="..\..\src\gui\widgets\zep.cc" />
+    <ClCompile Include="..\..\src\gui\widgets\zoomable-image.cc" />
     <ClCompile Include="..\..\third_party\imgui_memory_editor\imgui_memory_editor.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -170,12 +176,15 @@
     <ClInclude Include="..\..\src\gui\widgets\assembly.h" />
     <ClInclude Include="..\..\src\gui\widgets\breakpoints.h" />
     <ClInclude Include="..\..\src\gui\widgets\callstacks.h" />
+    <ClInclude Include="..\..\src\gui\widgets\cdrom-viewer.h" />
     <ClInclude Include="..\..\src\gui\widgets\console.h" />
     <ClInclude Include="..\..\src\gui\widgets\dynarec_disassembly.h" />
     <ClInclude Include="..\..\src\gui\widgets\events.h" />
     <ClInclude Include="..\..\src\gui\widgets\filedialog.h" />
     <ClInclude Include="..\..\src\gui\widgets\gpulogger.h" />
     <ClInclude Include="..\..\src\gui\widgets\handlers.h" />
+    <ClInclude Include="..\..\src\gui\widgets\heap_viewer.h" />
+    <ClInclude Include="..\..\src\gui\widgets\hwregs.h" />
     <ClInclude Include="..\..\src\gui\widgets\isobrowser.h" />
     <ClInclude Include="..\..\src\gui\widgets\kernellog.h" />
     <ClInclude Include="..\..\src\gui\widgets\log.h" />
@@ -183,9 +192,11 @@
     <ClInclude Include="..\..\src\gui\widgets\luainspector.h" />
     <ClInclude Include="..\..\src\gui\widgets\memcard_manager.h" />
     <ClInclude Include="..\..\src\gui\widgets\memory_observer.h" />
+    <ClInclude Include="..\..\src\gui\widgets\msan_viewer.h" />
     <ClInclude Include="..\..\src\gui\widgets\named_savestates.h" />
     <ClInclude Include="..\..\src\gui\widgets\patches.h" />
     <ClInclude Include="..\..\src\gui\widgets\pio-cart.h" />
+    <ClInclude Include="..\..\src\gui\widgets\ram-viewer.h" />
     <ClInclude Include="..\..\src\gui\widgets\typed_debugger.h" />
     <ClInclude Include="..\..\src\gui\widgets\registers.h" />
     <ClInclude Include="..\..\src\gui\widgets\shader-editor.h" />
@@ -193,6 +204,7 @@
     <ClInclude Include="..\..\src\gui\widgets\vram-viewer.h" />
     <ClInclude Include="..\..\src\gui\widgets\zep-lua.h" />
     <ClInclude Include="..\..\src\gui\widgets\zep.h" />
+    <ClInclude Include="..\..\src\gui\widgets\zoomable-image.h" />
     <ClInclude Include="..\..\third_party\imgui_memory_editor\imgui_memory_editor.h" />
   </ItemGroup>
   <ItemGroup>
