@@ -258,7 +258,7 @@ void PCSX::Widgets::TypedDebugger::displayBreakpointOptions(WatchTreeNode* node,
             return true;
         };
 
-    const auto logReadsWritesButtonName = fmt::format(f_("Log reads and writes##{}{}"), node->name.c_str(), address);
+    const auto logReadsWritesButtonName = fmt::format(f_("Log r&w##{}{}"), node->name.c_str(), address);
     if (ImGui::Button(logReadsWritesButtonName.c_str())) {
         auto* newReadBreakpoint = PCSX::g_emulator->m_debug->addBreakpoint(
             address, PCSX::Debug::BreakpointType::Read, node->size, _("Read"), logReadsWritesInvoker);
@@ -268,14 +268,14 @@ void PCSX::Widgets::TypedDebugger::displayBreakpointOptions(WatchTreeNode* node,
         m_watchBreakpoints.push_back(newWriteBreakpoint);
     }
     ImGui::SameLine();
-    const auto readBreakpointButtonName = fmt::format(f_("Add read breakpoint##{}{}"), node->name.c_str(), address);
+    const auto readBreakpointButtonName = fmt::format(f_("Add read bp##{}{}"), node->name.c_str(), address);
     if (ImGui::Button(readBreakpointButtonName.c_str())) {
         auto* newBreakpoint = PCSX::g_emulator->m_debug->addBreakpoint(
             address, PCSX::Debug::BreakpointType::Read, node->size, _("ReadPause"), logReadsWritesInvoker);
         m_watchBreakpoints.push_back(newBreakpoint);
     }
     ImGui::SameLine();
-    const auto writeBreakpointButtonName = fmt::format(f_("Add write breakpoint##{}{}"), node->name.c_str(), address);
+    const auto writeBreakpointButtonName = fmt::format(f_("Add write bp##{}{}"), node->name.c_str(), address);
     if (ImGui::Button(writeBreakpointButtonName.c_str())) {
         auto* newBreakpoint = PCSX::g_emulator->m_debug->addBreakpoint(
             address, PCSX::Debug::BreakpointType::Write, node->size, _("WritePause"), logReadsWritesInvoker);

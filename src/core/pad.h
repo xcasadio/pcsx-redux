@@ -52,6 +52,14 @@ class Pads {
 
     virtual bool isPadConnected(int pad) = 0;
 
+    // Button override: forces a button pressed regardless of physical input.
+    // button index: select=0, start=3, up=4, right=5, down=6, left=7,
+    //               l2=8, r2=9, l1=10, r1=11, triangle=12, circle=13, cross=14, square=15
+    virtual void setPadButtonOverride(Port port, int button) = 0;
+    virtual void clearPadButtonOverride(Port port, int button) = 0;
+    virtual void clearAllPadOverrides(Port port) = 0;
+    virtual uint16_t getPadOverrides(Port port) = 0;
+
     bool m_showCfg = false;
 
     enum {

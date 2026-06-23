@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "pcsx-redux": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${workspaceFolder}/tools/mcp-server/dist/index.js"],
+      "env": {
+        "PCSX_HOST": "localhost",
+        "PCSX_PORT": "8080"
+      }
+    }
+  }
+}

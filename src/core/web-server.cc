@@ -33,7 +33,10 @@
 #include "cdrom/file.h"
 #include "cdrom/iso9660-reader.h"
 #include "core/cdrom.h"
+#include "core/debug.h"
+#include "core/disr3000a.h"
 #include "core/gpu.h"
+#include "core/pad.h"
 #include "core/psxemulator.h"
 #include "core/psxmem.h"
 #include "core/r3000a.h"
@@ -153,6 +156,489 @@ class RamExecutor : public PCSX::WebExecutor {
   public:
     RamExecutor() = default;
     virtual ~RamExecutor() = default;
+};
+
+class CpuRegistersExecutor : public PCSX::WebExecutor {
+    virtual bool match(PCSX::WebClient* client, const PCSX::UrlData& urldata) final {
+        return urldata.path == "/api/v1/cpu/registers";
+    }
+    virtual bool execute(PCSX::WebClient* client, PCSX::RequestData& request) final {
+        if (request.method == PCSX::RequestData::Method::HTTP_HTTP_GET) {
+            auto& regs = PCSX::g_emulator->m_cpu->m_regs;
+            nlohmann::json j;
+            j["pc"] = regs.pc;
+            j["code"] = regs.code;
+            j["cycle"] = regs.cycle;
+
+            nlohmann::json gpr;
+            const char* gprNames[] = {
+                "r0", "at", "v0", "v1", "a0", "a1", "a2", "a3",
+                "t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7",
+                "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7",
+                "t8", "t9", "k0", "k1", "gp", "sp", "s8", "ra",
+                "lo", "hi"
+            };
+            for (int i = 0; i < 34; i++) {
+                gpr[gprNames[i]] = regs.GPR.r[i];
+            }
+            j["gpr"] = gpr;
+
+            nlohmann::json cp0;
+            for (int i = 0; i < 32; i++) {
+                cp0[PCSX::Disasm::s_disRNameCP0[i]] = regs.CP0.r[i];
+            }
+            j["cp0"] = cp0;
+
+            nlohmann::json cp2d;
+            for (int i = 0; i < 32; i++) {
+                cp2d[PCSX::Disasm::s_disRNameCP2D[i]] = regs.CP2D.r[i];
+            }
+            j["cp2d"] = cp2d;
+
+            nlohmann::json cp2c;
+            for (int i = 0; i < 32; i++) {
+                cp2c[PCSX::Disasm::s_disRNameCP2C[i]] = regs.CP2C.r[i];
+            }
+            j["cp2c"] = cp2c;
+
+            write200(client, j);
+            return true;
+        }
+        return false;
+    }
+
+  public:
+    CpuRegistersExecutor() = default;
+    virtual ~CpuRegistersExecutor() = default;
+};
+
+class PartialRamExecutor : public PCSX::WebExecutor {
+    virtual bool match(PCSX::WebClient* client, const PCSX::UrlData& urldata) final {
+        return urldata.path == "/api/v1/cpu/ram";
+    }
+    virtual bool execute(PCSX::WebClient* client, PCSX::RequestData& request) final {
+        const auto& ram8M = PCSX::g_emulator->settings.get<PCSX::Emulator::Setting8MB>().value;
+        const uint32_t ramSize = (ram8M ? 8 : 2) * 1024 * 1024;
+
+        if (request.method == PCSX::RequestData::Method::HTTP_HTTP_GET) {
+            auto vars = parseQuery(request.urlData.query);
+            auto iaddr = vars.find("addr");
+            auto isize = vars.find("size");
+            if ((iaddr == vars.end()) || (isize == vars.end()) || !iaddr->second.has_value() ||
+                !isize->second.has_value()) {
+                client->write("HTTP/1.1 400 Bad Request\r\n\r\nMissing addr or size parameter.");
+                return true;
+            }
+            uint32_t addr = 0;
+            uint32_t size = 0;
+            try {
+                auto addrStr = iaddr->second.value();
+                if (addrStr.substr(0, 2) == "0x" || addrStr.substr(0, 2) == "0X") {
+                    addr = std::stoul(addrStr, nullptr, 16);
+                } else {
+                    addr = std::stoul(addrStr);
+                }
+                size = std::stoul(isize->second.value());
+            } catch (...) {
+                client->write("HTTP/1.1 400 Bad Request\r\n\r\nInvalid addr or size.");
+                return true;
+            }
+            if (size == 0 || size > 65536) {
+                client->write("HTTP/1.1 400 Bad Request\r\n\r\nSize must be 1-65536.");
+                return true;
+            }
+            // Normalize PSX address to RAM offset (strip mirror bits)
+            uint32_t offset = addr & (ramSize - 1);
+            if (offset + size > ramSize) {
+                client->write("HTTP/1.1 416 Range Not Satisfiable\r\n\r\nAddress range exceeds RAM.");
+                return true;
+            }
+            uint8_t* data = (uint8_t*)malloc(size);
+            memcpy(data, PCSX::g_emulator->m_mem->m_wram + offset, size);
+            PCSX::Slice slice;
+            slice.acquire(data, size);
+            client->write(std::string("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: ") +
+                          std::to_string(size) + std::string("\r\n\r\n"));
+            client->write(std::move(slice));
+            return true;
+        }
+        return false;
+    }
+
+  public:
+    PartialRamExecutor() = default;
+    virtual ~PartialRamExecutor() = default;
+};
+
+class DisassembleExecutor : public PCSX::WebExecutor {
+    virtual bool match(PCSX::WebClient* client, const PCSX::UrlData& urldata) final {
+        return urldata.path == "/api/v1/cpu/disassemble";
+    }
+    virtual bool execute(PCSX::WebClient* client, PCSX::RequestData& request) final {
+        if (request.method == PCSX::RequestData::Method::HTTP_HTTP_GET) {
+            auto vars = parseQuery(request.urlData.query);
+            auto iaddr = vars.find("addr");
+            auto icount = vars.find("count");
+            if ((iaddr == vars.end()) || !iaddr->second.has_value()) {
+                client->write("HTTP/1.1 400 Bad Request\r\n\r\nMissing addr parameter.");
+                return true;
+            }
+            uint32_t addr = 0;
+            uint32_t count = 20;
+            try {
+                auto addrStr = iaddr->second.value();
+                if (addrStr.substr(0, 2) == "0x" || addrStr.substr(0, 2) == "0X") {
+                    addr = std::stoul(addrStr, nullptr, 16);
+                } else {
+                    addr = std::stoul(addrStr);
+                }
+                if (icount != vars.end() && icount->second.has_value()) {
+                    count = std::stoul(icount->second.value());
+                }
+            } catch (...) {
+                client->write("HTTP/1.1 400 Bad Request\r\n\r\nInvalid addr or count.");
+                return true;
+            }
+            if (count == 0 || count > 200) {
+                client->write("HTTP/1.1 400 Bad Request\r\n\r\nCount must be 1-200.");
+                return true;
+            }
+
+            const auto& ram8M = PCSX::g_emulator->settings.get<PCSX::Emulator::Setting8MB>().value;
+            const uint32_t ramSize = (ram8M ? 8 : 2) * 1024 * 1024;
+            auto& cpu = PCSX::g_emulator->m_cpu;
+
+            nlohmann::json instructions = nlohmann::json::array();
+            for (uint32_t i = 0; i < count; i++) {
+                uint32_t pc = addr + i * 4;
+                uint32_t physAddr = pc & (ramSize - 1);
+                uint32_t opcode = 0;
+                // Try to read from RAM
+                if ((pc & 0x1f000000) == 0x1f000000 || physAddr >= ramSize) {
+                    // BIOS or out of range - try read32
+                    opcode = PCSX::g_emulator->m_mem->read32(pc, PCSX::Memory::ReadType::Data);
+                } else {
+                    memcpy(&opcode, PCSX::g_emulator->m_mem->m_wram + physAddr, 4);
+                }
+                uint32_t nextOpcode = 0;
+                if (i + 1 < count) {
+                    uint32_t nextPc = pc + 4;
+                    uint32_t nextPhysAddr = nextPc & (ramSize - 1);
+                    if ((nextPc & 0x1f000000) == 0x1f000000 || nextPhysAddr >= ramSize) {
+                        nextOpcode = PCSX::g_emulator->m_mem->read32(nextPc, PCSX::Memory::ReadType::Data);
+                    } else {
+                        memcpy(&nextOpcode, PCSX::g_emulator->m_mem->m_wram + nextPhysAddr, 4);
+                    }
+                }
+
+                std::string disasm = PCSX::Disasm::asString(opcode, nextOpcode, pc, nullptr, false);
+                nlohmann::json instr;
+                instr["address"] = pc;
+                instr["addressHex"] = fmt::format("0x{:08x}", pc);
+                instr["opcode"] = opcode;
+                instr["opcodeHex"] = fmt::format("0x{:08x}", opcode);
+                instr["disassembly"] = disasm;
+
+                auto sym = cpu->getSymbolAt(pc);
+                if (sym) instr["symbol"] = *sym;
+
+                instructions.push_back(instr);
+            }
+
+            nlohmann::json j;
+            j["instructions"] = instructions;
+            write200(client, j);
+            return true;
+        }
+        return false;
+    }
+
+  public:
+    DisassembleExecutor() = default;
+    virtual ~DisassembleExecutor() = default;
+};
+
+class BreakpointsExecutor : public PCSX::WebExecutor {
+    virtual bool match(PCSX::WebClient* client, const PCSX::UrlData& urldata) final {
+        return urldata.path == "/api/v1/cpu/breakpoints";
+    }
+    virtual bool execute(PCSX::WebClient* client, PCSX::RequestData& request) final {
+        auto& debug = *PCSX::g_emulator->m_debug;
+
+        if (request.method == PCSX::RequestData::Method::HTTP_HTTP_GET) {
+            nlohmann::json bps = nlohmann::json::array();
+            auto& tree = debug.getTree();
+            for (auto& bp : tree) {
+                nlohmann::json bpj;
+                uint32_t fullAddr = bp.address() | bp.base();
+                bpj["address"] = fullAddr;
+                bpj["addressHex"] = fmt::format("0x{:08x}", fullAddr);
+                bpj["type"] = bp.type() == PCSX::Debug::BreakpointType::Exec
+                                  ? "Exec"
+                                  : (bp.type() == PCSX::Debug::BreakpointType::Read ? "Read" : "Write");
+                bpj["width"] = bp.width();
+                bpj["label"] = bp.label();
+                bpj["enabled"] = bp.enabled();
+                bpj["source"] = bp.source();
+                bps.push_back(bpj);
+            }
+
+            nlohmann::json j;
+            j["breakpoints"] = bps;
+            write200(client, j);
+            return true;
+        } else if (request.method == PCSX::RequestData::Method::HTTP_POST) {
+            auto vars = parseQuery(request.urlData.query);
+            auto ifunction = vars.find("function");
+            if (ifunction == vars.end() || !ifunction->second.has_value()) {
+                client->write("HTTP/1.1 400 Bad Request\r\n\r\nMissing function parameter.");
+                return true;
+            }
+            std::string function = ifunction->second.value();
+
+            if (function == "add") {
+                auto iaddr = vars.find("addr");
+                auto itype = vars.find("type");
+                if (iaddr == vars.end() || !iaddr->second.has_value() || itype == vars.end() ||
+                    !itype->second.has_value()) {
+                    client->write("HTTP/1.1 400 Bad Request\r\n\r\nMissing addr or type.");
+                    return true;
+                }
+                uint32_t addr = 0;
+                try {
+                    auto addrStr = iaddr->second.value();
+                    if (addrStr.substr(0, 2) == "0x" || addrStr.substr(0, 2) == "0X") {
+                        addr = std::stoul(addrStr, nullptr, 16);
+                    } else {
+                        addr = std::stoul(addrStr);
+                    }
+                } catch (...) {
+                    client->write("HTTP/1.1 400 Bad Request\r\n\r\nInvalid addr.");
+                    return true;
+                }
+                std::string typeStr = itype->second.value();
+                PCSX::Debug::BreakpointType bpType;
+                if (typeStr == "exec") {
+                    bpType = PCSX::Debug::BreakpointType::Exec;
+                } else if (typeStr == "read") {
+                    bpType = PCSX::Debug::BreakpointType::Read;
+                } else if (typeStr == "write") {
+                    bpType = PCSX::Debug::BreakpointType::Write;
+                } else {
+                    client->write("HTTP/1.1 400 Bad Request\r\n\r\nInvalid type. Use exec, read, or write.");
+                    return true;
+                }
+                unsigned width = 4;
+                auto iwidth = vars.find("width");
+                if (iwidth != vars.end() && iwidth->second.has_value()) {
+                    try {
+                        width = std::stoul(iwidth->second.value());
+                    } catch (...) {
+                    }
+                }
+                std::string label;
+                auto ilabel = vars.find("label");
+                if (ilabel != vars.end() && ilabel->second.has_value()) {
+                    label = ilabel->second.value();
+                }
+                debug.addBreakpoint(addr, bpType, width, "web-api", label);
+                client->write("HTTP/1.1 200 OK\r\n\r\n");
+                return true;
+            } else if (function == "remove") {
+                auto iaddr = vars.find("addr");
+                auto itype = vars.find("type");
+                if (iaddr == vars.end() || !iaddr->second.has_value()) {
+                    client->write("HTTP/1.1 400 Bad Request\r\n\r\nMissing addr.");
+                    return true;
+                }
+                uint32_t addr = 0;
+                try {
+                    auto addrStr = iaddr->second.value();
+                    if (addrStr.substr(0, 2) == "0x" || addrStr.substr(0, 2) == "0X") {
+                        addr = std::stoul(addrStr, nullptr, 16);
+                    } else {
+                        addr = std::stoul(addrStr);
+                    }
+                } catch (...) {
+                    client->write("HTTP/1.1 400 Bad Request\r\n\r\nInvalid addr.");
+                    return true;
+                }
+                PCSX::Debug::BreakpointType bpType = PCSX::Debug::BreakpointType::Exec;
+                if (itype != vars.end() && itype->second.has_value()) {
+                    std::string typeStr = itype->second.value();
+                    if (typeStr == "read") bpType = PCSX::Debug::BreakpointType::Read;
+                    else if (typeStr == "write")
+                        bpType = PCSX::Debug::BreakpointType::Write;
+                }
+                uint32_t normalizedAddr = addr & ~0xe0000000;
+                bool found = false;
+                auto& tree = debug.getTree();
+                const PCSX::Debug::Breakpoint* toRemove = nullptr;
+                for (auto& bp : tree) {
+                    if (bp.address() == normalizedAddr && bp.type() == bpType) {
+                        toRemove = &bp;
+                        break;
+                    }
+                }
+                if (toRemove) {
+                    debug.removeBreakpoint(toRemove);
+                    found = true;
+                }
+                if (found) {
+                    client->write("HTTP/1.1 200 OK\r\n\r\n");
+                } else {
+                    client->write("HTTP/1.1 404 Not Found\r\n\r\nBreakpoint not found.");
+                }
+                return true;
+            } else if (function == "enable" || function == "disable") {
+                auto iaddr = vars.find("addr");
+                if (iaddr == vars.end() || !iaddr->second.has_value()) {
+                    client->write("HTTP/1.1 400 Bad Request\r\n\r\nMissing addr.");
+                    return true;
+                }
+                uint32_t addr = 0;
+                try {
+                    auto addrStr = iaddr->second.value();
+                    if (addrStr.substr(0, 2) == "0x" || addrStr.substr(0, 2) == "0X") {
+                        addr = std::stoul(addrStr, nullptr, 16);
+                    } else {
+                        addr = std::stoul(addrStr);
+                    }
+                } catch (...) {
+                    client->write("HTTP/1.1 400 Bad Request\r\n\r\nInvalid addr.");
+                    return true;
+                }
+                uint32_t normalizedAddr = addr & ~0xe0000000;
+                bool found = false;
+                auto& tree = debug.getTree();
+                for (auto& bp : tree) {
+                    if (bp.address() == normalizedAddr) {
+                        if (function == "enable")
+                            bp.enable();
+                        else
+                            bp.disable();
+                        found = true;
+                    }
+                }
+                if (found) {
+                    client->write("HTTP/1.1 200 OK\r\n\r\n");
+                } else {
+                    client->write("HTTP/1.1 404 Not Found\r\n\r\nBreakpoint not found.");
+                }
+                return true;
+            } else if (function == "removeAll") {
+                debug.removeAllBreakpoints();
+                client->write("HTTP/1.1 200 OK\r\n\r\n");
+                return true;
+            }
+            client->write("HTTP/1.1 400 Bad Request\r\n\r\nUnknown function.");
+            return true;
+        }
+        return false;
+    }
+
+  public:
+    BreakpointsExecutor() = default;
+    virtual ~BreakpointsExecutor() = default;
+};
+
+class PadExecutor : public PCSX::WebExecutor {
+    static int buttonNameToIndex(std::string_view name) {
+        static const std::pair<std::string_view, int> table[] = {
+            {"select", 0}, {"start", 3},  {"up", 4},       {"right", 5},
+            {"down", 6},   {"left", 7},   {"l2", 8},       {"r2", 9},
+            {"l1", 10},    {"r1", 11},    {"triangle", 12}, {"circle", 13},
+            {"cross", 14}, {"square", 15}
+        };
+        for (const auto& e : table) {
+            if (e.first == name) return e.second;
+        }
+        return -1;
+    }
+
+    static nlohmann::json buildPortJson(PCSX::Pads::Port port) {
+        uint16_t ov = PCSX::g_emulator->m_pads->getPadOverrides(port);
+        nlohmann::json j;
+        j["overrides_raw"] = ov;
+        static const std::pair<std::string_view, int> table[] = {
+            {"select", 0}, {"start", 3},  {"up", 4},       {"right", 5},
+            {"down", 6},   {"left", 7},   {"l2", 8},       {"r2", 9},
+            {"l1", 10},    {"r1", 11},    {"triangle", 12}, {"circle", 13},
+            {"cross", 14}, {"square", 15}
+        };
+        for (const auto& e : table) {
+            // bit=0 in overrides means button is forced pressed (PSX active-low)
+            j["pressed"][std::string(e.first)] = ((ov >> e.second) & 1) == 0;
+        }
+        return j;
+    }
+
+    virtual bool match(PCSX::WebClient* client, const PCSX::UrlData& urldata) final {
+        return urldata.path == "/api/v1/pad";
+    }
+    virtual bool execute(PCSX::WebClient* client, PCSX::RequestData& request) final {
+        if (request.method == PCSX::RequestData::Method::HTTP_HTTP_GET) {
+            nlohmann::json resp;
+            resp["port1"] = buildPortJson(PCSX::Pads::Port::Port1);
+            resp["port2"] = buildPortJson(PCSX::Pads::Port::Port2);
+            write200(client, resp);
+            return true;
+        }
+        if (request.method == PCSX::RequestData::Method::HTTP_POST) {
+            auto vars = parseQuery(request.urlData.query);
+            auto ifunc = vars.find("function");
+            if (ifunc == vars.end() || !ifunc->second.has_value()) {
+                client->write("HTTP/1.1 400 Bad Request\r\n\r\nMissing 'function' parameter. Valid: press, release, reset");
+                return true;
+            }
+            const std::string func = ifunc->second.value();
+
+            PCSX::Pads::Port port = PCSX::Pads::Port::Port1;
+            auto iport = vars.find("port");
+            if (iport != vars.end() && iport->second.has_value()) {
+                if (iport->second.value() == "2") port = PCSX::Pads::Port::Port2;
+            }
+
+            auto& pads = *PCSX::g_emulator->m_pads;
+            if (func == "reset") {
+                pads.clearAllPadOverrides(port);
+                client->write("HTTP/1.1 200 OK\r\n\r\nAll button overrides cleared.");
+                return true;
+            }
+
+            auto ibtn = vars.find("button");
+            if (ibtn == vars.end() || !ibtn->second.has_value()) {
+                client->write("HTTP/1.1 400 Bad Request\r\n\r\nMissing 'button' parameter.");
+                return true;
+            }
+            int btnIdx = buttonNameToIndex(ibtn->second.value());
+            if (btnIdx < 0) {
+                client->write(fmt::format(
+                    "HTTP/1.1 400 Bad Request\r\n\r\nUnknown button '{}'. Valid: select,start,up,right,down,left,l2,r2,l1,r1,triangle,circle,cross,square",
+                    ibtn->second.value()));
+                return true;
+            }
+            int portNum = (port == PCSX::Pads::Port::Port1) ? 1 : 2;
+            if (func == "press") {
+                pads.setPadButtonOverride(port, btnIdx);
+                client->write(fmt::format("HTTP/1.1 200 OK\r\n\r\nButton '{}' pressed on port {}.",
+                    ibtn->second.value(), portNum));
+            } else if (func == "release") {
+                pads.clearPadButtonOverride(port, btnIdx);
+                client->write(fmt::format("HTTP/1.1 200 OK\r\n\r\nButton '{}' released on port {}.",
+                    ibtn->second.value(), portNum));
+            } else {
+                client->write(fmt::format(
+                    "HTTP/1.1 400 Bad Request\r\n\r\nUnknown function '{}'. Valid: press, release, reset", func));
+            }
+            return true;
+        }
+        return false;
+    }
+
+  public:
+    PadExecutor() = default;
+    virtual ~PadExecutor() = default;
 };
 
 class AssemblyExecutor : public PCSX::WebExecutor {
@@ -798,6 +1284,11 @@ void PCSX::WebExecutor::write200(PCSX::WebClient* client, const nlohmann::json& 
 PCSX::WebServer::WebServer() : m_listener(g_system->m_eventBus) {
     m_executors.push_back(new VramExecutor());
     m_executors.push_back(new RamExecutor());
+    m_executors.push_back(new CpuRegistersExecutor());
+    m_executors.push_back(new PartialRamExecutor());
+    m_executors.push_back(new DisassembleExecutor());
+    m_executors.push_back(new BreakpointsExecutor());
+    m_executors.push_back(new PadExecutor());
     m_executors.push_back(new AssemblyExecutor());
     m_executors.push_back(new CacheExecutor());
     m_executors.push_back(new FlowExecutor());

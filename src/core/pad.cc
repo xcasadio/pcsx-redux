@@ -67,6 +67,21 @@ class PadsImpl : public PCSX::Pads {
         }
     }
 
+    void setPadButtonOverride(Port port, int button) override {
+        if (button < 0 || button > 15) return;
+        m_pads[(int)port].m_data.overrides &= ~(uint16_t)(1u << button);
+    }
+    void clearPadButtonOverride(Port port, int button) override {
+        if (button < 0 || button > 15) return;
+        m_pads[(int)port].m_data.overrides |= (uint16_t)(1u << button);
+    }
+    void clearAllPadOverrides(Port port) override {
+        m_pads[(int)port].m_data.overrides = 0xffff;
+    }
+    uint16_t getPadOverrides(Port port) override {
+        return m_pads[(int)port].m_data.overrides;
+    }
+
   private:
     PCSX::EventBus::Listener m_listener;
     // This is a list of all of the valid GLFW gamepad IDs that we have found querying GLFW.

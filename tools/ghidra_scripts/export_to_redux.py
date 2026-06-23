@@ -1,3 +1,4 @@
+# @runtime Jython
 import os
 from ghidra.program.model.data import DataType, Pointer, Structure
 

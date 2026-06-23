@@ -29,20 +29,20 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseWithTracy|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -175,9 +175,6 @@
     </ProjectReference>
     <ProjectReference Include="..\..\gui\gui.vcxproj">
       <Project>{6ec7fdf3-1418-40bd-8584-1eea34ac3e3e}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\..\http-parser\http-parser.vcxproj">
-      <Project>{2f6c532e-1d52-4e87-8b7d-979eaa214db6}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\ImFileDialog\ImFileDialog.vcxproj">
       <Project>{2bf92257-03c6-43fe-85e8-918166a07a26}</Project>
