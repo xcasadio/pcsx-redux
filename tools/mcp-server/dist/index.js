@@ -19,6 +19,7 @@ const debug_js_1 = require("./tools/debug.js");
 const cdrom_js_1 = require("./tools/cdrom.js");
 const savestate_js_1 = require("./tools/savestate.js");
 const input_js_1 = require("./tools/input.js");
+const spu_js_1 = require("./tools/spu.js");
 const host = process.env.PCSX_HOST || "localhost";
 const port = parseInt(process.env.PCSX_PORT || "8080", 10);
 const timeout = parseInt(process.env.PCSX_TIMEOUT || "10000", 10);
@@ -35,6 +36,7 @@ const server = new mcp_js_1.McpServer({
 (0, cdrom_js_1.registerCdromTools)(server, client);
 (0, savestate_js_1.registerSavestateTools)(server, client);
 (0, input_js_1.registerInputTools)(server, client);
+(0, spu_js_1.registerSpuTools)(server, client);
 // Start the server with stdio transport
 async function main() {
     const transport = new stdio_js_1.StdioServerTransport();

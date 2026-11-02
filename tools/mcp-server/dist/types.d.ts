@@ -53,4 +53,15 @@ export interface SaveStateSlotInfo {
         filepath: string;
     }>;
 }
+export interface SpuCaptureStatus {
+    active: boolean;
+    failed: boolean;
+    frames: number;
+    discontinuities: number;
+    sampleRate: number;
+    volume: number;
+    interpolation: number;
+    reverb: number;
+    path: string;
+}
 //# sourceMappingURL=types.d.ts.map

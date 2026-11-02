@@ -40,6 +40,7 @@
 #include "core/psxemulator.h"
 #include "core/psxmem.h"
 #include "core/r3000a.h"
+#include "core/spu.h"
 #include "core/system.h"
 #include "gui/gui.h"
 #include "lua/luawrapper.h"
@@ -1252,6 +1253,93 @@ class ScreenExecutor : public PCSX::WebExecutor {
     virtual ~ScreenExecutor() = default;
 };
 
+class SpuCaptureExecutor : public PCSX::WebExecutor {
+    virtual bool match(PCSX::WebClient* client, const PCSX::UrlData& urldata) final {
+        return PCSX::StringsHelpers::startsWith(urldata.path, c_prefix);
+    }
+    virtual bool execute(PCSX::WebClient* client, PCSX::RequestData& request) final {
+        auto path = request.urlData.path.substr(c_prefix.length());
+        auto& spu = PCSX::g_emulator->m_spu;
+
+        if (request.method == PCSX::RequestData::Method::HTTP_HTTP_GET) {
+            if (path == "status") {
+                writeStatus(client);
+                return true;
+            }
+        } else if (request.method == PCSX::RequestData::Method::HTTP_POST) {
+            if (path == "start") {
+                auto vars = parseQuery(request.urlData.query);
+                auto ifilepath = vars.find("filepath");
+                if (ifilepath == vars.end() || ifilepath->second.value_or("").empty()) {
+                    client->write("HTTP/1.1 400 Bad Request\r\n\r\nMissing filepath.");
+                    return true;
+                }
+                if (spu->getWavCaptureStatus().active) {
+                    client->write("HTTP/1.1 409 Conflict\r\n\r\nA capture is already running.");
+                    return true;
+                }
+                std::filesystem::path filepath;
+                try {
+                    // The query is UTF-8: a plain char pointer would be read in the ANSI code page on Windows.
+                    filepath = std::filesystem::path(MAKEU8(ifilepath->second.value().c_str()));
+                } catch (std::exception const&) {
+                    client->write("HTTP/1.1 400 Bad Request\r\n\r\nThe filepath is not valid UTF-8.");
+                    return true;
+                }
+                if (filepath.is_relative()) {
+                    std::filesystem::path persistentDir = PCSX::g_system->getPersistentDir();
+                    if (persistentDir.empty()) {
+                        persistentDir = std::filesystem::current_path();
+                    }
+                    filepath = persistentDir / filepath;
+                }
+                if (!spu->startWavCapture(filepath)) {
+                    client->write(fmt::format("HTTP/1.1 500 Internal Server Error\r\n\r\nFailed to open \"{}\".",
+                                              ifilepath->second.value()));
+                    return true;
+                }
+                writeStatus(client);
+                return true;
+            } else if (path == "stop") {
+                if (!spu->getWavCaptureStatus().active) {
+                    client->write("HTTP/1.1 409 Conflict\r\n\r\nNo capture is running.");
+                    return true;
+                }
+                if (!spu->stopWavCapture()) {
+                    client->write(fmt::format(
+                        "HTTP/1.1 500 Internal Server Error\r\n\r\nThe capture failed after {} frames.",
+                        spu->getWavCaptureStatus().frames));
+                    return true;
+                }
+                writeStatus(client);
+                return true;
+            }
+        }
+        client->write("HTTP/1.1 404 Not Found\r\n\r\nUnknown SPU capture route.");
+        return true;
+    }
+    void writeStatus(PCSX::WebClient* client) {
+        const auto status = PCSX::g_emulator->m_spu->getWavCaptureStatus();
+        const auto path = status.path.u8string();
+        nlohmann::json j;
+        j["active"] = status.active;
+        j["failed"] = status.failed;
+        j["frames"] = status.frames;
+        j["discontinuities"] = status.discontinuities;
+        j["sampleRate"] = PCSX::SPUInterface::WAV_CAPTURE_SAMPLE_RATE;
+        j["volume"] = status.volume;
+        j["interpolation"] = status.interpolation;
+        j["reverb"] = status.reverb;
+        j["path"] = std::string(reinterpret_cast<const char*>(path.data()), path.size());
+        write200(client, j);
+    }
+
+  public:
+    const std::string_view c_prefix = "/api/v1/spu/capture/";
+    SpuCaptureExecutor() = default;
+    virtual ~SpuCaptureExecutor() = default;
+};
+
 }  // namespace
 
 std::multimap<std::string, std::optional<std::string>> PCSX::WebExecutor::parseQuery(std::string_view query) {
@@ -1297,6 +1385,7 @@ PCSX::WebServer::WebServer() : m_listener(g_system->m_eventBus) {
     m_executors.push_back(new CDExecutor());
     m_executors.push_back(new StateExecutor());
     m_executors.push_back(new ScreenExecutor());
+    m_executors.push_back(new SpuCaptureExecutor());
     m_listener.listen<Events::SettingsLoaded>([this](const auto& event) {
         auto& debugSettings = g_emulator->settings.get<Emulator::SettingDebugSettings>();
         if (debugSettings.get<Emulator::DebugSettings::WebServer>() && (m_serverStatus != SERVER_STARTED)) {

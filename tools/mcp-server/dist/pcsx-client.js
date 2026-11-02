@@ -208,6 +208,26 @@ class PcsxClient {
         const arrayBuf = await resp.arrayBuffer();
         return Buffer.from(arrayBuf);
     }
+    // ── SPU capture ──
+    async getSpuCaptureStatus() {
+        return this.getJson("/api/v1/spu/capture/status");
+    }
+    async startSpuCapture(filepath) {
+        // The web server reads 256 bytes at a time and takes each piece of a URL for a whole one.
+        // fetch escapes more than encodeURIComponent, so the length is measured on the URL it sends.
+        const path = `/api/v1/spu/capture/start?filepath=${encodeURIComponent(filepath)}`;
+        const sent = new URL(path, this.baseUrl);
+        const length = sent.pathname.length + sent.search.length;
+        if (length > 250) {
+            throw new Error(`The encoded request is ${length} bytes, the web server takes 250: use a shorter or a relative path.`);
+        }
+        const text = await this.postAction(path);
+        return JSON.parse(text);
+    }
+    async stopSpuCapture() {
+        const text = await this.postAction("/api/v1/spu/capture/stop");
+        return JSON.parse(text);
+    }
     // ── Lua ──
     async executeLua(handler, body) {
         const resp = await this.request(`/api/v1/lua/${handler}`, {

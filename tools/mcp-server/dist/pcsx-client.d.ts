@@ -1,7 +1,7 @@
 /**
  * HTTP client for communicating with the PCSX-Redux web server API.
  */
-import { PcsxRegisters, PcsxStatus, DisassembledInstruction, Breakpoint, CdromInfo, SaveStateSlotInfo } from "./types.js";
+import { PcsxRegisters, PcsxStatus, DisassembledInstruction, Breakpoint, CdromInfo, SaveStateSlotInfo, SpuCaptureStatus } from "./types.js";
 export declare class PcsxClient {
     private baseUrl;
     private timeout;
@@ -47,6 +47,9 @@ export declare class PcsxClient {
     getPadState(): Promise<any>;
     getVram(): Promise<Buffer>;
     getScreenshot(): Promise<Buffer>;
+    getSpuCaptureStatus(): Promise<SpuCaptureStatus>;
+    startSpuCapture(filepath: string): Promise<SpuCaptureStatus>;
+    stopSpuCapture(): Promise<SpuCaptureStatus>;
     executeLua(handler: string, body?: string): Promise<string>;
 }
 //# sourceMappingURL=pcsx-client.d.ts.map

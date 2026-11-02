@@ -52,3 +52,15 @@ export interface SaveStateSlotInfo {
   slots: boolean[];
   named?: Array<{ name: string; filepath: string }>;
 }
+
+export interface SpuCaptureStatus {
+  active: boolean;
+  failed: boolean;
+  frames: number;
+  discontinuities: number;
+  sampleRate: number;
+  volume: number;
+  interpolation: number;
+  reverb: number;
+  path: string;
+}

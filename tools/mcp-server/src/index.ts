@@ -18,6 +18,7 @@ import { registerDebugTools } from "./tools/debug.js";
 import { registerCdromTools } from "./tools/cdrom.js";
 import { registerSavestateTools } from "./tools/savestate.js";
 import { registerInputTools } from "./tools/input.js";
+import { registerSpuTools } from "./tools/spu.js";
 
 const host = process.env.PCSX_HOST || "localhost";
 const port = parseInt(process.env.PCSX_PORT || "8080", 10);
@@ -38,6 +39,7 @@ registerDebugTools(server, client);
 registerCdromTools(server, client);
 registerSavestateTools(server, client);
 registerInputTools(server, client);
+registerSpuTools(server, client);
 
 // Start the server with stdio transport
 async function main() {

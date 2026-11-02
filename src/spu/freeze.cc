@@ -38,6 +38,7 @@
 #include "spu/registers.h"
 
 void PCSX::SPU::impl::save(SaveStates::SPU &spu) {
+    noteWavCaptureDiscontinuity();
     RemoveThread();
 
     // Capture buffer
@@ -91,6 +92,7 @@ void PCSX::SPU::impl::save(SaveStates::SPU &spu) {
 }
 
 void PCSX::SPU::impl::load(const SaveStates::SPU &spu) {
+    noteWavCaptureDiscontinuity();
     RemoveThread();  // we stop processing while doing the save!
 
     spu.get<SaveStates::CBCDLeft>().copyTo(reinterpret_cast<uint8_t *>(captureBuffer.CDCapLeft));

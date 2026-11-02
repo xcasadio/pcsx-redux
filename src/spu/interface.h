@@ -21,6 +21,7 @@
 
 #include <stdint.h>
 
+#include <fstream>
 #include <thread>
 
 #include "core/decode_xa.h"
@@ -85,6 +86,10 @@ class impl final : public SPUInterface {
     }
     uint32_t getCurrentFrames() override { return m_audioOut.getCurrentFrames(); }
     void waitForGoal(uint32_t goal) override { m_audioOut.waitForGoal(goal); }
+
+    bool startWavCapture(const std::filesystem::path &) final;
+    bool stopWavCapture() final;
+    WavCaptureStatus getWavCaptureStatus() final;
 
   private:
     struct ADSRFlags {
@@ -221,6 +226,15 @@ class impl final : public SPUInterface {
     CaptureBuffer captureBuffer;
     // The cap buffer index for voice 1 and voice 3.
     int32_t capBufVoiceIndex = 0;
+
+    void writeWavCaptureHeader();
+    void writeWavCapture(const uint8_t *data, size_t bytes);
+    void noteWavCaptureDiscontinuity();
+
+    // Protects the capture: the mixer thread writes it while the web server starts and stops it.
+    std::mutex m_wavCaptureMutex;
+    std::ofstream m_wavCapture;
+    WavCaptureStatus m_wavCaptureStatus;
 
     // user settings
     SettingsType settings;

@@ -61,6 +61,25 @@ class SPUInterface {
     virtual uint32_t getFrameCount() = 0;
     virtual void setLua(Lua L) = 0;
 
+    // Writes the SPU mix to a 16-bit stereo WAV file as it leaves the mixer, before the audio backend: voices after
+    // interpolation, reverb return, division by 4 - volume and clamp. XA and CDDA take a separate stream to the
+    // backend, so they are not in the file unless a voice plays the CD capture area of SPU RAM.
+    static constexpr uint32_t WAV_CAPTURE_SAMPLE_RATE = 44100;
+    struct WavCaptureStatus {
+        bool active = false;
+        bool failed = false;
+        uint32_t frames = 0;
+        // State saves, state loads and changes of the settings below: the file is one continuous mix only at 0.
+        uint32_t discontinuities = 0;
+        int volume = -1;
+        int interpolation = -1;
+        int reverb = -1;
+        std::filesystem::path path;
+    };
+    virtual bool startWavCapture(const std::filesystem::path &) = 0;
+    virtual bool stopWavCapture() = 0;
+    virtual WavCaptureStatus getWavCaptureStatus() = 0;
+
     bool m_showDebug = false;
     bool m_showCfg = false;
 

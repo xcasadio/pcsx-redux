@@ -401,6 +401,41 @@ Takes a screenshot of the current PSX display. Returns a PNG image.
 
 ---
 
+## SPU Capture
+
+The capture writes the SPU mix to a WAV file as it leaves the mixer, before the audio backend: 16-bit PCM, stereo, 44100 Hz.
+
+- The samples hold the voices after the `Interp` setting and the reverb return under the `Reverb` setting, divided by `4 - volume` and clamped to ±32767. They are the undivided mix only when `volume` is 3.
+- XA and CDDA take a separate stream to the backend and are not in the file, unless a voice plays the CD capture area of SPU RAM.
+- The global Mute and Mono settings act after the capture. A voice muted in the SPU debug window is missing from the file, and this is not counted as a discontinuity.
+- The file grows by blocks of 810 frames (18.4 ms), and the block after a state save or load is shorter. Its first block can hold up to 810 frames mixed before the start, and up to 810 frames can be left out at the stop.
+- The mixer works by blocks paced by the audio device, not by emulated time, and an underrun leaves no silence in the file. Positions in the file do not follow the game's clock sample by sample.
+
+All three tools return `{ active, failed, frames, discontinuities, sampleRate, volume, interpolation, reverb, path }`:
+
+- `failed`: a write failed or the file reached the 4 GiB limit. The file stops growing, and `active` stays true until the capture is stopped.
+- `discontinuities`: state saves, state loads and changes of `Volume`, `Interp` or `Reverb` since the start. A state save can drop up to 765 frames and a state load joins two timelines, with no mark in the file. The file is one continuous mix only at 0.
+- `volume`, `interpolation`, `reverb`: the settings of the capture, -1 before the first one.
+- `path`: the resolved path of the file.
+
+### `pcsx_spu_capture_start`
+Starts writing a WAV file. Fails if a capture is already running.
+
+**Parameters:**
+- `filepath` (string): path of the WAV file. A relative path is resolved against the persistent directory. The encoded request must fit in 250 bytes: the MCP client refuses a longer one, and the web server answers 404 or 400 to a raw request past that length. A raw request whose path is not valid UTF-8 gets a 400.
+
+---
+
+### `pcsx_spu_capture_stop`
+Stops the running capture and finishes the WAV file. Fails if the capture failed.
+
+---
+
+### `pcsx_spu_capture_status`
+Reports the running or last capture.
+
+---
+
 ## Typical Debugging Workflow
 
 ```

@@ -17,6 +17,7 @@ VS Code (AI Agent)
       ├── Breakpoints, execution control
       ├── CD-ROM filesystem access
       ├── Save states, VRAM, screenshots
+      ├── SPU capture to WAV
       └── Symbol management
 ```
 
@@ -117,6 +118,13 @@ The MCP configuration is already in `.vscode/mcp.json`:
 | `pcsx_savestate_load` | Load state from slot or by name |
 | `pcsx_get_vram` | Dump GPU VRAM (1MB raw) |
 | `pcsx_screenshot` | Take a PNG screenshot |
+
+### SPU Capture
+| Tool | Description |
+|---|---|
+| `pcsx_spu_capture_start` | Start writing the SPU mix to a WAV file |
+| `pcsx_spu_capture_stop` | Stop the capture and finish the file |
+| `pcsx_spu_capture_status` | Report the running or last capture |
 
 ## Example Session
 

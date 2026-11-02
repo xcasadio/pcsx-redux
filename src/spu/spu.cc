@@ -794,6 +794,7 @@ void PCSX::SPU::impl::MainThread() {
         // wanna have around 1/60 sec (16.666 ms) updates
 
         if (iCycle++ > 16) {
+            writeWavCapture(pSpuBuffer, ((uint8_t *)pS) - ((uint8_t *)pSpuBuffer));
             bool done = false;
             while (!done) {
                 done =
@@ -1021,8 +1022,115 @@ long PCSX::SPU::impl::close(void) {
 
     RemoveThread();   // no more feeding
     RemoveStreams();  // no more streaming
+    if (getWavCaptureStatus().active && !stopWavCapture()) {
+        g_system->log(LogClass::SPU, "The WAV capture failed.\n");
+    }
 
     return 0;
+}
+
+////////////////////////////////////////////////////////////////////////
+// WAV CAPTURE: the SPU mix, before the audio backend
+////////////////////////////////////////////////////////////////////////
+
+void PCSX::SPU::impl::writeWavCaptureHeader() {
+    constexpr uint16_t bytesPerFrame = sizeof(MiniAudio::Frame);
+    const uint32_t dataBytes = m_wavCaptureStatus.frames * bytesPerFrame;
+    const auto write16 = [this](uint16_t value) { m_wavCapture.write(reinterpret_cast<const char *>(&value), 2); };
+    const auto write32 = [this](uint32_t value) { m_wavCapture.write(reinterpret_cast<const char *>(&value), 4); };
+
+    m_wavCapture.seekp(0);
+    m_wavCapture.write("RIFF", 4);
+    write32(36 + dataBytes);
+    m_wavCapture.write("WAVEfmt ", 8);
+    write32(16);
+    write16(1);  // PCM
+    write16(2);
+    write32(WAV_CAPTURE_SAMPLE_RATE);
+    write32(WAV_CAPTURE_SAMPLE_RATE * bytesPerFrame);
+    write16(bytesPerFrame);
+    write16(16);
+    m_wavCapture.write("data", 4);
+    write32(dataBytes);
+}
+
+void PCSX::SPU::impl::writeWavCapture(const uint8_t *data, size_t bytes) {
+    // What a RIFF size field can count: past it, the capture stops growing and reports a failure.
+    constexpr uint32_t maxFrames = (0xffffffffu - 36) / sizeof(MiniAudio::Frame);
+
+    std::unique_lock<std::mutex> lock(m_wavCaptureMutex);
+    auto &status = m_wavCaptureStatus;
+    if (!status.active || status.failed) return;
+    const uint32_t frames = bytes / sizeof(MiniAudio::Frame);
+    if (frames > maxFrames - status.frames) {
+        status.failed = true;
+        return;
+    }
+
+    const int volume = settings.get<Volume>();
+    const int interpolation = settings.get<Interpolation>();
+    const int reverb = settings.get<Reverb>();
+    if (volume != status.volume || interpolation != status.interpolation || reverb != status.reverb) {
+        status.discontinuities++;
+        status.volume = volume;
+        status.interpolation = interpolation;
+        status.reverb = reverb;
+    }
+
+    m_wavCapture.write(reinterpret_cast<const char *>(data), bytes);
+    if (m_wavCapture.good()) {
+        status.frames += frames;
+    } else {
+        status.failed = true;
+    }
+}
+
+void PCSX::SPU::impl::noteWavCaptureDiscontinuity() {
+    std::unique_lock<std::mutex> lock(m_wavCaptureMutex);
+    if (m_wavCaptureStatus.active) m_wavCaptureStatus.discontinuities++;
+}
+
+bool PCSX::SPU::impl::startWavCapture(const std::filesystem::path &path) {
+    std::unique_lock<std::mutex> lock(m_wavCaptureMutex);
+    if (m_wavCaptureStatus.active) return false;
+    m_wavCapture.clear();
+    m_wavCapture.open(path, std::ios::binary | std::ios::trunc);
+    if (!m_wavCapture.is_open()) return false;
+
+    m_wavCaptureStatus = {};
+    m_wavCaptureStatus.active = true;
+    m_wavCaptureStatus.volume = settings.get<Volume>();
+    m_wavCaptureStatus.interpolation = settings.get<Interpolation>();
+    m_wavCaptureStatus.reverb = settings.get<Reverb>();
+    m_wavCaptureStatus.path = path;
+    writeWavCaptureHeader();
+    if (m_wavCapture.good()) return true;
+
+    m_wavCapture.close();
+    m_wavCaptureStatus.active = false;
+    m_wavCaptureStatus.failed = true;
+    return false;
+}
+
+bool PCSX::SPU::impl::stopWavCapture() {
+    std::unique_lock<std::mutex> lock(m_wavCaptureMutex);
+    auto &status = m_wavCaptureStatus;
+    if (!status.active) return false;
+
+    // The seek of the header drops the buffered bytes without an error if they cannot be written: flush them first.
+    m_wavCapture.flush();
+    if (!m_wavCapture.good()) status.failed = true;
+    m_wavCapture.clear();
+    writeWavCaptureHeader();
+    m_wavCapture.close();
+    if (!m_wavCapture.good()) status.failed = true;
+    status.active = false;
+    return !status.failed;
+}
+
+PCSX::SPUInterface::WavCaptureStatus PCSX::SPU::impl::getWavCaptureStatus() {
+    std::unique_lock<std::mutex> lock(m_wavCaptureMutex);
+    return m_wavCaptureStatus;
 }
 
 ////////////////////////////////////////////////////////////////////////

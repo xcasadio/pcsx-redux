@@ -9,6 +9,7 @@ import {
   Breakpoint,
   CdromInfo,
   SaveStateSlotInfo,
+  SpuCaptureStatus,
 } from "./types.js";
 
 export class PcsxClient {
@@ -324,6 +325,32 @@ export class PcsxClient {
       throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
     const arrayBuf = await resp.arrayBuffer();
     return Buffer.from(arrayBuf);
+  }
+
+  // ── SPU capture ──
+
+  async getSpuCaptureStatus(): Promise<SpuCaptureStatus> {
+    return this.getJson<SpuCaptureStatus>("/api/v1/spu/capture/status");
+  }
+
+  async startSpuCapture(filepath: string): Promise<SpuCaptureStatus> {
+    // The web server reads 256 bytes at a time and takes each piece of a URL for a whole one.
+    // fetch escapes more than encodeURIComponent, so the length is measured on the URL it sends.
+    const path = `/api/v1/spu/capture/start?filepath=${encodeURIComponent(filepath)}`;
+    const sent = new URL(path, this.baseUrl);
+    const length = sent.pathname.length + sent.search.length;
+    if (length > 250) {
+      throw new Error(
+        `The encoded request is ${length} bytes, the web server takes 250: use a shorter or a relative path.`
+      );
+    }
+    const text = await this.postAction(path);
+    return JSON.parse(text) as SpuCaptureStatus;
+  }
+
+  async stopSpuCapture(): Promise<SpuCaptureStatus> {
+    const text = await this.postAction("/api/v1/spu/capture/stop");
+    return JSON.parse(text) as SpuCaptureStatus;
   }
 
   // ── Lua ──
